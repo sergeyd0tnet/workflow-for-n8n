@@ -1,0 +1,131 @@
+{
+    "name": "Compare XMLCalendar 2022 CSV vs JSON",
+    "nodes": [
+      {
+        "parameters": {},
+        "id": "manual-trigger-1",
+        "name": "Manual Trigger",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [200, 300]
+      },
+      {
+        "parameters": {
+          "url": "http://xmlcalendar.ru/data/ru/2022/calendar.csv",
+          "responseFormat": "file",
+          "options": {
+            "timeout": 15000,
+            "retry": 3,
+            "headerParametersUi": {
+              "parameter": [
+                { "name": "Accept", "value": "text/csv" }
+              ]
+            }
+          }
+        },
+        "id": "http-csv-1",
+        "name": "Get CSV",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [460, 180]
+      },
+      {
+        "parameters": {
+          "operation": "read",
+          "binaryPropertyName": "data",
+          "options": {
+            "readAsString": true
+          }
+        },
+        "id": "sheet-parse-1",
+        "name": "CSV → JSON",
+        "type": "n8n-nodes-base.spreadsheetFile",
+        "typeVersion": 4,
+        "position": [700, 180]
+      },
+      {
+        "parameters": {
+          "keepOnlySet": false,
+          "values": { "string": [ { "name": "source", "value": "csv" } ] }
+        },
+        "id": "set-csv-1",
+        "name": "Tag CSV Source",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [940, 180]
+      },
+      {
+        "parameters": {
+          "url": "http://xmlcalendar.ru/data/ru/2022/calendar.json",
+          "responseFormat": "json",
+          "options": {
+            "timeout": 15000,
+            "retry": 3,
+            "headerParametersUi": {
+              "parameter": [
+                { "name": "Accept", "value": "application/json" }
+              ]
+            }
+          }
+        },
+        "id": "http-json-1",
+        "name": "Get JSON",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [460, 440]
+      },
+      {
+        "parameters": {
+          "operation": "splitOutItems",
+          "fieldToSplitOut": "json"
+        },
+        "id": "itemlists-split-1",
+        "name": "Split JSON Items",
+        "type": "n8n-nodes-base.itemLists",
+        "typeVersion": 3,
+        "position": [700, 440]
+      },
+      {
+        "parameters": {
+          "keepOnlySet": false,
+          "values": { "string": [ { "name": "source", "value": "json" } ] }
+        },
+        "id": "set-json-1",
+        "name": "Tag JSON Source",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [940, 440]
+      },
+      {
+        "parameters": {
+          "mode": "append"
+        },
+        "id": "merge-append-1",
+        "name": "Append CSV+JSON",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 2,
+        "position": [1180, 320]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Helper: stable stringify with sorted keys\nfunction stableStringify(obj) {\n  if (obj === null || typeof obj !== 'object') return JSON.stringify(obj);\n  if (Array.isArray(obj)) return '[' + obj.map(stableStringify).join(',') + ']';\n  const keys = Object.keys(obj).sort();\n  return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}';\n}\n\nconst csvItems = [];\nconst jsonItems = [];\nfor (const item of items) {\n  const src = item.json?.source;\n  const clean = { ...item.json };\n  delete clean.source;\n  if (src === 'csv') csvItems.push(clean);\n  else if (src === 'json') jsonItems.push(clean);\n}\n\nconst csvStrings = csvItems.map(stableStringify);\nconst jsonStrings = jsonItems.map(stableStringify);\nconst setCsv = new Set(csvStrings);\nconst setJson = new Set(jsonStrings);\nconst onlyInCsvStr = [...setCsv].filter(s => !setJson.has(s));\nconst onlyInJsonStr = [...setJson].filter(s => !setCsv.has(s));\n\nconst result = {\n  equal: onlyInCsvStr.length === 0 && onlyInJsonStr.length === 0,\n  csvCount: csvItems.length,\n  jsonCount: jsonItems.length,\n  onlyInCsv: onlyInCsvStr.slice(0, 100).map(s => JSON.parse(s)),\n  onlyInJson: onlyInJsonStr.slice(0, 100).map(s => JSON.parse(s)),\n  note: \"Поля сравниваются по содержимому, порядок ключей/строк не влияет. Показаны первые 100 расхождений на каждую сторону.\"\n};\n\nreturn [{ json: result }];"
+        },
+        "id": "code-compare-1",
+        "name": "Compare Datasets",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1420, 320]
+      }
+    ],
+    "connections": {
+      "Manual Trigger": { "main": [ [ { "node": "Get CSV", "type": "main", "index": 0 } ], [ { "node": "Get JSON", "type": "main", "index": 0 } ] ] },
+      "Get CSV": { "main": [ [ { "node": "CSV \u2192 JSON", "type": "main", "index": 0 } ] ] },
+      "CSV \u2192 JSON": { "main": [ [ { "node": "Tag CSV Source", "type": "main", "index": 0 } ] ] },
+      "Get JSON": { "main": [ [ { "node": "Split JSON Items", "type": "main", "index": 0 } ] ] },
+      "Split JSON Items": { "main": [ [ { "node": "Tag JSON Source", "type": "main", "index": 0 } ] ] },
+      "Tag CSV Source": { "main": [ [ { "node": "Append CSV+JSON", "type": "main", "index": 0 } ] ] },
+      "Tag JSON Source": { "main": [ [ { "node": "Append CSV+JSON", "type": "main", "index": 1 } ] ] },
+      "Append CSV+JSON": { "main": [ [ { "node": "Compare Datasets", "type": "main", "index": 0 } ] ] }
+    }
+  }
